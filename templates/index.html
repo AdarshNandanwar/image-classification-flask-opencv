@@ -17,19 +17,20 @@
             <div class="col s12 m4">
                 <div class="card">
                     <div class="card-image">
-                        <img src="{{ url_for('serve_img', img_id=pic.id)}}">
-                        <!-- <span class="card-title">Title</span> -->
+                        <!-- <img src="{{ url_for('serve_img', img_id=pic.id)}}"> -->
+                        <img src="{{url_for('static', filename='images/')}}{{pic.id}}__masked.jpg">
+                        <span class="card-title">{{ pic.name }}</span>
                         <a class="btn-floating halfway-fab waves-effect waves-light red" href="/delete/{{ pic.id }}">
                             <i class="small material-icons">delete</i>
                         </a>
-                        <a class="btn-floating halfway-fab waves-effect waves-light red" style="margin-right: 50px;"
-                            href="/update/{{ pic.id }}">
+                        <a class="btn-floating halfway-fab waves-effect waves-light red" style="margin-right: 50px;" href="/update/{{ pic.id }}">
                             <i class="small material-icons">edit</i>
                         </a>
                     </div>
                     <div class="card-content">
-                        <p>{{ pic.name }}</p>
+                        <!-- <p>{{ pic.name }}</p> -->
                         <p>{{ pic.date_uploaded.date() }}</p>
+                        <p>{{ pic.data }}</p>
                     </div>
                 </div>
             </div>
