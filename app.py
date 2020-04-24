@@ -6,7 +6,7 @@ from werkzeug.utils import secure_filename
 import cv2
 import numpy as np
 import os
-
+import enum
 
 app = Flask(__name__)
 
@@ -20,13 +20,20 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///filestorage.db'
 db = SQLAlchemy(app)
 
 class FileContents(db.Model):
+    __tablename__ = 'filecontent'
     id = db.Column(db.Integer, primary_key = True)
     name = db.Column(db.String(200))
     data = db.Column(db.String(200))
     date_uploaded = db.Column(db.DateTime, default = datetime.utcnow)
+    tags = db.relationship('Tags', backref='filecontent', cascade = 'all, delete-orphan', lazy = 'dynamic')
 
     def __repr__(self):
         return '<Image %r>' % self.id
+
+class Tags(db.Model):
+    id = db.Column(db.Integer, primary_key = True)
+    image_file = db.Column(db.Integer, db.ForeignKey('filecontent.id'), nullable=False)
+    tag = db.Column(db.String(20), nullable=False)
 
 # Steps to create DB:
 # open python interactive shell
@@ -45,14 +52,19 @@ def index():
     if request.method == 'POST' and len(request.files['uploadPic'].filename) and allowed_image(request.files['uploadPic'].filename):
         file = request.files['uploadPic']
         new_pic = FileContents(name=file.filename)
-        # file.save(os.path.join(target, str(new_pic.id)))
         try:
             db.session.add(new_pic)
             db.session.flush()
             filename = secure_filename(file.filename)
             target = os.path.join(APP_ROOT, 'static/images/')
-            file.save(os.path.join(target, str(new_pic.id)))
-            new_pic.data = findFaces(new_pic.id)
+            file.save(os.path.join(target+'uploads/', str(new_pic.id)))
+            new_pic.data, is_pedestrian, is_face, is_car = classifyImage(new_pic.id)
+            if is_pedestrian:
+                db.session.add(Tags(image_file=new_pic.id, tag='Pedestrian'))
+            if is_face:
+                db.session.add(Tags(image_file=new_pic.id, tag='Face'))
+            if is_car:
+                db.session.add(Tags(image_file=new_pic.id, tag='Car'))
             db.session.commit()
             return redirect('/')
         except Exception as e:
@@ -60,20 +72,31 @@ def index():
             return 'There was problem uploading your image'
 
     else:
+        data = []
         pics = FileContents.query.order_by(FileContents.date_uploaded).all()
-        return render_template('index.html', pics = pics)
+        for pic in pics:
+            tags = Tags.query.filter_by(image_file = pic.id)
+            entry = {}
+            entry['pic'] = pic
+            entry['tags'] = tags
+            data.append(entry)
+
+        return render_template('index.html', data = data)
 
 @app.route('/delete/<int:id>', methods = ['POST', 'GET'])
 def delete(id):
     pic_to_delete = FileContents.query.get_or_404(id)
 
     try:
+        Tags.query.filter_by(image_file = pic_to_delete.id).delete()
         db.session.delete(pic_to_delete)
         db.session.commit()
         target = os.path.join(APP_ROOT, 'static/images/')
-        os.remove(os.path.join(target, str(pic_to_delete.id)))
+        os.remove(os.path.join(target+'uploads/', str(pic_to_delete.id)))
+        os.remove(os.path.join(target+'masked/', str(pic_to_delete.id)+'.jpg'))
         return redirect('/')
-    except:
+    except Exception as e:
+        print(e)
         return 'There was a problem deleting that pic'
 
 @app.route('/update/<int:id>', methods = ['POST', 'GET'])
@@ -84,9 +107,17 @@ def update(id):
         pic.name = file.filename
         try:
             target = os.path.join(APP_ROOT, 'static/images/')
-            os.remove(os.path.join(target, str(pic.id)))
-            file.save(os.path.join(target, str(pic.id)))
-            pic.data = findFaces(pic.id)
+            os.remove(os.path.join(target+'uploads/', str(pic.id)))
+            os.remove(os.path.join(target+'masked/', str(pic.id)+'.jpg'))
+            file.save(os.path.join(target+'uploads/', str(pic.id)))
+            Tags.query.filter_by(image_file = pic.id).delete()
+            pic.data, is_pedestrian, is_face, is_car = classifyImage(pic.id)
+            if is_pedestrian:
+                db.session.add(Tags(image_file=pic.id, tag='Pedestrian'))
+            if is_face:
+                db.session.add(Tags(image_file=pic.id, tag='Face'))
+            if is_car:
+                db.session.add(Tags(image_file=pic.id, tag='Car'))
             db.session.commit()
             return redirect('/')
         except:
@@ -121,17 +152,32 @@ def allowed_image(filename):
 
 
 # OpenCV
-def findFaces(id):
-    faceCascade = cv2.CascadeClassifier(os.path.join(APP_ROOT, 'static/classifiers/haarcascade_frontalface_default.xml'))
+def classifyImage(id):
+
     target = os.path.join(APP_ROOT, 'static/images/')
-    img = cv2.imread(target+str(id))
+    img = cv2.imread(target+'uploads/'+str(id))
     imgGray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # FULL BODY PEDESTRIANS
+    bodyCascade = cv2.CascadeClassifier(os.path.join(APP_ROOT, 'static/cascade/haarcascade_fullbody.xml'))
+    bodies = bodyCascade.detectMultiScale(imgGray, 1.1, 4)
+    for (x, y, w, h) in bodies:
+        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 255), 3)
+    # FACES
+    faceCascade = cv2.CascadeClassifier(os.path.join(APP_ROOT, 'static/cascade/haarcascade_frontalface_default.xml'))
     faces = faceCascade.detectMultiScale(imgGray, 1.1, 4)
     for (x, y, w, h) in faces:
         cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 0), 2)
-    print(img)
-    cv2.imwrite(target+str(id)+'__masked.jpg', img) 
-    return "Faces found: "+str(len(faces))
+    # CARS
+    carCascade = cv2.CascadeClassifier(os.path.join(APP_ROOT, 'static/cascade/haarcascade_car.xml'))
+    cars = carCascade.detectMultiScale(imgGray, 1.1, 4)
+    for (x, y, w, h) in cars:
+        cv2.rectangle(img, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+        
+    cv2.imwrite(target+'masked/'+str(id)+'.jpg', img) 
+    # return format: data, is_pedestrian, is_face, is_car
+    return "Pedestrians found: "+str(len(bodies))+", Faces found: "+str(len(faces))+", Cars found: "+str(len(cars)), len(bodies)!=0, len(faces)!=0, len(cars)!=0 
 
 
 

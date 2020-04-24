@@ -8,29 +8,30 @@
 
 
 <div class="container" style="margin-top: 4%;">
-    {% if pics|length < 1 %}
+    {% if data|length < 1 %}
     <h4>There are no Images. Add one below!</h4>
     {% else %}
     <div class="row">
         <div class="row">
-            {% for pic in pics %}
+            {% for entry in data %}
             <div class="col s12 m4">
                 <div class="card">
                     <div class="card-image">
-                        <!-- <img src="{{ url_for('serve_img', img_id=pic.id)}}"> -->
-                        <img src="{{url_for('static', filename='images/')}}{{pic.id}}__masked.jpg">
-                        <span class="card-title">{{ pic.name }}</span>
-                        <a class="btn-floating halfway-fab waves-effect waves-light red" href="/delete/{{ pic.id }}">
+                        <img src="{{url_for('static', filename='images/masked/')}}{{entry.pic.id}}.jpg">
+                        <span class="card-title">{{ entry.pic.name }}</span>
+                        <a class="btn-floating halfway-fab waves-effect waves-light red" href="/delete/{{ entry.pic.id }}">
                             <i class="small material-icons">delete</i>
                         </a>
-                        <a class="btn-floating halfway-fab waves-effect waves-light red" style="margin-right: 50px;" href="/update/{{ pic.id }}">
+                        <a class="btn-floating halfway-fab waves-effect waves-light red" style="margin-right: 50px;" href="/update/{{ entry.pic.id }}">
                             <i class="small material-icons">edit</i>
                         </a>
                     </div>
-                    <div class="card-content">
-                        <!-- <p>{{ pic.name }}</p> -->
-                        <p>{{ pic.date_uploaded.date() }}</p>
-                        <p>{{ pic.data }}</p>
+                    <div class="card-content" style="padding-bottom: 40px;">
+                        <p>{{ entry.pic.date_uploaded.date() }}</p>
+                        <p>{{ entry.pic.data }}</p>
+                        {% for tag in entry.tags %}
+                            <span class="badge new white-text light-blue darken-3" data-badge-caption="{{ tag.tag }}"></span>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
